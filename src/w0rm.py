@@ -41,7 +41,7 @@ def arger() -> tuple[list[str], str]:
     return source, args.output
 
 
-def frame_extractor(target: str) -> list:
+def frame_extractor(target: str):
     """Extract the frames from a video into a list"""
     video = cv2.VideoCapture(target)
 
@@ -55,10 +55,10 @@ def frame_extractor(target: str) -> list:
             frames.append(frame)
         count += 1
 
-    return frames
+    return np.array(frames)
 
 
-def frame_dump(frames: list, r: tuple[int, int], dest: str, src: str) -> None:
+def frame_dump(frames, r: tuple[int, int], dest: str, src: str) -> None:
     """Write the processed frames to disk"""
 
     import os
