@@ -2,6 +2,7 @@
 
 import cv2
 import numpy as np
+import threading
 
 DESC = "A simple program preprocessing training video data into images"
 RESOLUTIONS = [
@@ -52,7 +53,8 @@ def frame_extractor(target: str):
     while success:
         success, frame = video.read()
         if frame is not None:
-            frames.append(frame)
+            grayframe = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            frames.append(grayframe)
         count += 1
 
     return frames[0].shape[:2][::-1], np.array(frames)
@@ -62,7 +64,7 @@ def frame_dump(frames, r: tuple[int, int], dest: str, src: str) -> None:
     """Write the processed frames to disk"""
 
     import os
-    filename = (f"{dest}/{os.path.basename(src)}")
+    filename = (f"{dest}/{os.path.basename(src)}/{r[0]}x{r[1]}")
     os.makedirs(filename)
 
     for i, frame in enumerate(frames):
@@ -80,7 +82,7 @@ def crop3by2(frames, shape: tuple[int, int]):
         crop_h = h 
     else:
         crop_w = w
-        crop_h = w * 3/2
+        crop_h = w * 2/3
 
     center = (int(w/2), int(h/2))
     offset_w, offset_h = int(crop_w/2), int(crop_h/2)
@@ -96,6 +98,29 @@ def crop3by2(frames, shape: tuple[int, int]):
     return np.array(cropped)
 
 
+def downscale(frames, shape: tuple[int, int], dest: str, src: str):
+    """Downscale the frames into various resolution"""
+    starter_rez = (48,32)
+
+    ry = [x for x in range(shape[1])[starter_rez[1]:] if x%starter_rez[1] == 0]
+    rx = [int(x * 3/2) for x in ry]
+
+    rezzos = zip(rx,ry)
+    threads = []
+
+    for rez in rezzos:
+        frame_list = []
+        for frame in frames:
+            frame = cv2.resize(frame, rez, interpolation=cv2.INTER_LINEAR)
+            frame_list.append(frame)
+        t = threading.Thread(target=frame_dump, args=[np.array(frame_list), rez, dest, src])
+        threads.append(t)
+        t.start()
+
+    for t in threads:
+        t.join()
+
+
 def processor_kernel(dest:str, vid_src: str) -> None:
     """
     Processing steps needed to be performed on the source files
@@ -104,7 +129,7 @@ def processor_kernel(dest:str, vid_src: str) -> None:
 
     frame_size, frame_list = frame_extractor(vid_src)
     frame_list = crop3by2(frame_list, frame_size)
-    frame_dump(frame_list, frame_size, dest, vid_src)
+    downscale(frame_list, frame_size, dest, vid_src)
 
 
 def main() -> None:
@@ -113,7 +138,6 @@ def main() -> None:
 
     threads = []
 
-    import threading
     for s in src:
         print(f"Processing {s}")
         t = threading.Thread(target=processor_kernel, args=[dest,s])
