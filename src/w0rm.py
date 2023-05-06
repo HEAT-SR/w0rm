@@ -1,6 +1,6 @@
 #!/bin/env python
 
-import cv2
+import cv2 as cv
 import numpy as np
 import threading
 
@@ -44,7 +44,7 @@ def arger() -> tuple[list[str], str]:
 
 def frame_extractor(target: str):
     """Extract the frames from a video into a ndarray"""
-    video = cv2.VideoCapture(target)
+    video = cv.VideoCapture(target)
 
     count = 0
     success = 1
@@ -53,7 +53,7 @@ def frame_extractor(target: str):
     while success:
         success, frame = video.read()
         if frame is not None:
-            grayframe = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            grayframe = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
             frames.append(grayframe)
         count += 1
 
@@ -68,7 +68,7 @@ def frame_dump(frames, r: tuple[int, int], dest: str, src: str) -> None:
     os.makedirs(filename)
 
     for i, frame in enumerate(frames):
-        cv2.imwrite(f"{filename}/frame_{i}_{r[0]}x{r[1]}.png", frame)
+        cv.imwrite(f"{filename}/frame_{i}_{r[0]}x{r[1]}.png", frame)
 
 
 def crop3by2(frames, shape: tuple[int, int]):
@@ -111,9 +111,10 @@ def downscale(frames, shape: tuple[int, int], dest: str, src: str):
     for rez in rezzos:
         frame_list = []
         for frame in frames:
-            frame = cv2.resize(frame, rez, interpolation=cv2.INTER_LINEAR)
+            frame = cv.resize(frame, rez, interpolation=cv.INTER_LANCZOS4)
             frame_list.append(frame)
-        t = threading.Thread(target=frame_dump, args=[np.array(frame_list), rez, dest, src])
+        targs = [np.array(frame_list), rez, dest, src]
+        t = threading.Thread(target=frame_dump, args=targs)
         threads.append(t)
         t.start()
 
