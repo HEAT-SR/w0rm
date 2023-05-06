@@ -111,7 +111,7 @@ def downscale(frames, shape: tuple[int, int], dest: str, src: str):
     for rez in rezzos:
         frame_list = []
         for frame in frames:
-            frame = cv.resize(frame, rez, interpolation=cv.INTER_LINEAR)
+            frame = cv.resize(frame, rez, interpolation=cv.INTER_LANCZOS4)
             frame_list.append(frame)
         t = threading.Thread(target=frame_dump, args=[np.array(frame_list), rez, dest, src])
         threads.append(t)
