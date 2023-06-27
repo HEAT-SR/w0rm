@@ -10,6 +10,7 @@ RESOLUTIONS = [
         ]
 
 def arger() -> tuple[list[str], str]:
+def arger() -> tuple[list[str], list[str], str]:
     """Parse command line arguments"""
     import argparse
 
@@ -19,9 +20,11 @@ def arger() -> tuple[list[str], str]:
             )
 
     help_src = "Path to a video file to preprocess"
+    help_src2 = "Path to a pictures directory to preprocess"
     help_out = "Path to the directory into which to put the processed data"
 
     parser.add_argument("-s", "--source", action="append", help=help_src)
+    parser.add_argument("-p", "--pictures", action="append", help=help_src2)
     parser.add_argument(
             "-o",
             "--output",
@@ -31,15 +34,18 @@ def arger() -> tuple[list[str], str]:
             )
 
     args = parser.parse_args()
+    sourcev = []
+    sourcep = []
 
-    match args.source:
-        case None:
-            print("Nothing to process; exiting...")
-            exit(1)
-        case some:
-            source = [x for x in set(some)]
+    if args.source == None and args.pictures == None:
+        print("Nothing to process; exiting...")
+        exit(0)
+    if args.source != None:
+            sourcev = [x for x in set(args.source)]
+    if args.pictures != None:
+            sourcep = [x for x in set(args.pictures)]
 
-    return source, args.output
+    return sourcev, sourcep, args.output
 
 
 def frame_extractor(target: str):
@@ -122,7 +128,7 @@ def downscale(frames, shape: tuple[int, int], dest: str, src: str):
         t.join()
 
 
-def processor_kernel(dest:str, vid_src: str) -> None:
+def processorv_kernel(dest:str, vid_src: str) -> None:
     """
     Processing steps needed to be performed on the source files
     Used to create threads
@@ -133,15 +139,32 @@ def processor_kernel(dest:str, vid_src: str) -> None:
     downscale(frame_list, frame_size, dest, vid_src)
 
 
+def processorp_kernel(dest:str, pic_src: str) -> None:
+    """
+    Processing steps needed to be performed on the source folders
+    Used to create threads
+    """
+    frame_size = (1920, 1080)
+    frame_list = frame_loader(pic_src)
+    # frame_list = place3by2(frame_list)
+    # downscale(frame_list, frame_size, dest, pic_src)
+    pass
+
+
 def main() -> None:
     """w0rm main function"""
-    src, dest = arger()
+    srcv, srcp, dest = arger()
 
     threads = []
 
-    for s in src:
+    for s in srcv:
         print(f"Processing {s}")
-        t = threading.Thread(target=processor_kernel, args=[dest,s])
+        t = threading.Thread(target=processorv_kernel, args=[dest,s])
+        t.start()
+        threads.append(t)
+    for s in srcp:
+        print(f"Processing {s}")
+        t = threading.Thread(target=processorp_kernel, args=[dest,s])
         t.start()
         threads.append(t)
 
