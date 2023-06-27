@@ -9,8 +9,7 @@ RESOLUTIONS = [
         (48,32)
         ]
 
-def arger() -> tuple[list[str], str]:
-def arger() -> tuple[list[str], list[str], str]:
+def arger() -> tuple[list[str], list[str], str, bool]:
     """Parse command line arguments"""
     import argparse
 
@@ -25,6 +24,7 @@ def arger() -> tuple[list[str], list[str], str]:
 
     parser.add_argument("-s", "--source", action="append", help=help_src)
     parser.add_argument("-p", "--pictures", action="append", help=help_src2)
+    parser.add_argument("-n", "--noise", action="store_true", help="Add noise to the training images")
     parser.add_argument(
             "-o",
             "--output",
@@ -45,7 +45,7 @@ def arger() -> tuple[list[str], list[str], str]:
     if args.pictures != None:
             sourcep = [x for x in set(args.pictures)]
 
-    return sourcev, sourcep, args.output
+    return sourcev, sourcep, args.output, args.noise
 
 
 def frame_extractor(target: str):
@@ -104,7 +104,7 @@ def crop3by2(frames, shape: tuple[int, int]):
     return np.array(cropped)
 
 
-def downscale(frames, shape: tuple[int, int], dest: str, src: str):
+def downscale(frames, noise: bool, shape: tuple[int, int], dest: str, src: str):
     """Downscale the frames into various resolution"""
     starter_rez = (48,32)
 
@@ -118,6 +118,12 @@ def downscale(frames, shape: tuple[int, int], dest: str, src: str):
         frame_list = []
         for frame in frames:
             frame = cv.resize(frame, rez, interpolation=cv.INTER_LANCZOS4)
+
+            if noise:
+                scale=0.1
+                noise_img= np.random.normal(loc=0, scale=scale, size=frame.shape).astype(np.int16)
+                frame = np.clip(frame.copy().astype(np.int16) + noise_img, 0, 255).astype(np.uint8)
+
             frame_list.append(frame)
         targs = [np.array(frame_list), rez, dest, src]
         t = threading.Thread(target=frame_dump, args=targs)
@@ -128,7 +134,7 @@ def downscale(frames, shape: tuple[int, int], dest: str, src: str):
         t.join()
 
 
-def processorv_kernel(dest:str, vid_src: str) -> None:
+def processorv_kernel(dest:str, vid_src: str, noise: bool) -> None:
     """
     Processing steps needed to be performed on the source files
     Used to create threads
@@ -136,35 +142,84 @@ def processorv_kernel(dest:str, vid_src: str) -> None:
 
     frame_size, frame_list = frame_extractor(vid_src)
     frame_list = crop3by2(frame_list, frame_size)
-    downscale(frame_list, frame_size, dest, vid_src)
+    downscale(frame_list, noise, frame_size, dest, vid_src)
 
 
-def processorp_kernel(dest:str, pic_src: str) -> None:
+def frame_loader(src: str):
+    import os
+    images = []
+    images_nocrop = []
+    for filename in os.listdir(src):
+        if not filename.startswith('.'):  # Ignore hidden files
+            img_path = os.path.join(src, filename)
+            if os.path.isfile(img_path):
+                image = cv.imread(img_path)
+                if image is not None:
+                    images_nocrop.append(image)
+
+    max_width = max(image.shape[1] for image in images_nocrop)
+    max_height = max(image.shape[0] for image in images_nocrop)
+    background = np.zeros((max_height, max_width, 3), dtype=np.uint8)
+
+    images = []
+    for image in images_nocrop:
+        height, width, _ = image.shape
+
+        x_offset = (max_width - width) // 2
+        y_offset = (max_height - height) // 2
+
+        centered_image = background.copy()
+        centered_image[y_offset:y_offset+height, x_offset:x_offset+width] = image
+        grayimg= cv.cvtColor(centered_image, cv.COLOR_BGR2GRAY)
+        images.append(grayimg)
+
+    return (max_width, max_height), images
+
+def crop_images_to_ratio(images, target_ratio=3/2):
+    cropped_images = []
+    for image in images:
+        height, width = image.shape
+        current_ratio = width / height
+
+        if current_ratio > target_ratio:
+            # Crop the width to match the target ratio
+            new_width = int(height * target_ratio)
+            x_offset = (width - new_width) // 2
+            cropped_image = image[:, x_offset:x_offset+new_width]
+        else:
+            # Crop the height to match the target ratio
+            new_height = int(width / target_ratio)
+            y_offset = (height - new_height) // 2
+            cropped_image = image[y_offset:y_offset+new_height, :]
+
+        cropped_images.append(cropped_image)
+
+    return cropped_images
+
+def processorp_kernel(dest:str, pic_src: str, noise: bool) -> None:
     """
     Processing steps needed to be performed on the source folders
     Used to create threads
     """
-    frame_size = (1920, 1080)
-    frame_list = frame_loader(pic_src)
-    # frame_list = place3by2(frame_list)
-    # downscale(frame_list, frame_size, dest, pic_src)
-    pass
+    frame_size, frame_list = frame_loader(pic_src)
+    frame_list = crop_images_to_ratio(frame_list)
+    downscale(frame_list, noise, frame_size, dest, pic_src)
 
 
 def main() -> None:
     """w0rm main function"""
-    srcv, srcp, dest = arger()
+    srcv, srcp, dest, n = arger()
 
     threads = []
 
-    for s in srcv:
-        print(f"Processing {s}")
-        t = threading.Thread(target=processorv_kernel, args=[dest,s])
-        t.start()
-        threads.append(t)
     for s in srcp:
         print(f"Processing {s}")
-        t = threading.Thread(target=processorp_kernel, args=[dest,s])
+        t = threading.Thread(target=processorp_kernel, args=[dest,s,n])
+        t.start()
+        threads.append(t)
+    for s in srcv:
+        print(f"Processing {s}")
+        t = threading.Thread(target=processorv_kernel, args=[dest,s,n])
         t.start()
         threads.append(t)
 
