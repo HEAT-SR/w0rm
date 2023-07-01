@@ -5,6 +5,7 @@ import numpy as np
 import threading
 
 DESC = "A simple program preprocessing training video data into images"
+WIDTH_TO_HEIGHT = 4/3
 RESOLUTIONS = [
         (48,32)
         ]
@@ -77,18 +78,18 @@ def frame_dump(frames, r: tuple[int, int], dest: str, src: str) -> None:
         cv.imwrite(f"{filename}/frame_{i}_{r[0]}x{r[1]}.png", frame)
 
 
-def crop3by2(frames, shape: tuple[int, int]):
+def crop_frame(frames, shape: tuple[int, int]):
     """Crop the frames to fit the aspect ratio of the ir sensors"""
 
     w,h = shape
     major = max(w,h)
 
     if major == w:
-        crop_w = h * 3/2
+        crop_w = h * WIDTH_TO_HEIGHT
         crop_h = h 
     else:
         crop_w = w
-        crop_h = w * 2/3
+        crop_h = w * WIDTH_TO_HEIGHT
 
     center = (int(w/2), int(h/2))
     offset_w, offset_h = int(crop_w/2), int(crop_h/2)
@@ -106,10 +107,10 @@ def crop3by2(frames, shape: tuple[int, int]):
 
 def downscale(frames, noise: bool, shape: tuple[int, int], dest: str, src: str):
     """Downscale the frames into various resolution"""
-    starter_rez = (48,32)
+    starter_rez = (32,24)
 
-    ry = [x for x in range(shape[1])[starter_rez[1]:] if x%starter_rez[1] == 0]
-    rx = [int(x * 3/2) for x in ry]
+    ry = range(starter_rez[1],shape[0],starter_rez[1])#[x for x in (shape[1])[starter_rez[1],] if x%starter_rez[1] == 0]
+    rx = [int(x * WIDTH_TO_HEIGHT) for x in ry]
 
     rezzos = zip(rx,ry)
     threads = []
@@ -141,7 +142,7 @@ def processorv_kernel(dest:str, vid_src: str, noise: bool) -> None:
     """
 
     frame_size, frame_list = frame_extractor(vid_src)
-    frame_list = crop3by2(frame_list, frame_size)
+    frame_list = crop_frame(frame_list, frame_size)
     downscale(frame_list, noise, frame_size, dest, vid_src)
 
 
@@ -157,25 +158,25 @@ def frame_loader(src: str):
                 if image is not None:
                     images_nocrop.append(image)
 
-    max_width = max(image.shape[1] for image in images_nocrop)
-    max_height = max(image.shape[0] for image in images_nocrop)
+    max_width = min(image.shape[1] for image in images_nocrop)
+    max_height = min(image.shape[0] for image in images_nocrop)
     background = np.zeros((max_height, max_width, 3), dtype=np.uint8)
 
     images = []
     for image in images_nocrop:
         height, width, _ = image.shape
 
-        x_offset = (max_width - width) // 2
-        y_offset = (max_height - height) // 2
+        x_offset = abs(max_width - width) // 2
+        y_offset = abs(max_height - height) // 2
 
         centered_image = background.copy()
-        centered_image[y_offset:y_offset+height, x_offset:x_offset+width] = image
+        centered_image[0:max_height, 0:max_width] = image[y_offset:y_offset+max_height, x_offset:x_offset+max_width]
         grayimg= cv.cvtColor(centered_image, cv.COLOR_BGR2GRAY)
         images.append(grayimg)
 
     return (max_width, max_height), images
 
-def crop_images_to_ratio(images, target_ratio=3/2):
+def crop_images_to_ratio(images, target_ratio=WIDTH_TO_HEIGHT):
     cropped_images = []
     for image in images:
         height, width = image.shape
@@ -194,7 +195,7 @@ def crop_images_to_ratio(images, target_ratio=3/2):
 
         cropped_images.append(cropped_image)
 
-    return cropped_images
+    return cropped_image.shape, cropped_images
 
 def processorp_kernel(dest:str, pic_src: str, noise: bool) -> None:
     """
@@ -202,7 +203,7 @@ def processorp_kernel(dest:str, pic_src: str, noise: bool) -> None:
     Used to create threads
     """
     frame_size, frame_list = frame_loader(pic_src)
-    frame_list = crop_images_to_ratio(frame_list)
+    frame_size, frame_list = crop_images_to_ratio(frame_list)
     downscale(frame_list, noise, frame_size, dest, pic_src)
 
 
